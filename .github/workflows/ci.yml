@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Least privilege: jobs get read-only access to the repo unless they ask for more.
+permissions:
+  contents: read
+
+jobs:
+  # ---------- Tests, lint, build ----------
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Build check (API has no compile step; syntax-check the sources)
+        run: npm run build
+
+  # ---------- Secret detection ----------
+  secret-scan:
+    name: secret-scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets with gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------- Dependency scanning ----------
+  dependency-scan:
+    name: dependency-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      # GATE: fails the job on any HIGH or CRITICAL finding in production dependencies.
+      - name: npm audit (gate - high and above, production deps)
+        run: npm audit --audit-level=high --omit=dev
+
+      # REPORT ONLY: full audit incl. dev dependencies and low/moderate findings.
+      - name: npm audit (report only - everything)
+        run: npm audit
+        continue-on-error: true
